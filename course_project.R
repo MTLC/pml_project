@@ -113,6 +113,12 @@ cm_rf
 ##Detection Prevalence   0.2928   0.1873   0.1840   0.1630   0.1730
 ##Balanced Accuracy      0.9725   0.9282   0.9457   0.9472   0.9670
 
+## Apply model to 20 observations in test set
+predict(mod_rf, test)
+
+##[1] B A A A A E D D A A B C B A E E A A B B
+##Levels: A B C D E
+
 ## Boosting with trees ##########################################################################################
 mod_gbm <- train(classe ~ ., data=training_sample, method="gbm", verbose=FALSE)
 mod_gbm
@@ -147,6 +153,7 @@ mod_gbm
 pred_gbm <- predict(mod_gbm, testing)
 cm_gbm <- confusionMatrix(pred_gbm, testing$classe)
 cm_gbm
+
 ##Confusion Matrix and Statistics
 
 ##Reference
@@ -178,3 +185,9 @@ cm_gbm
 ##Detection Rate         0.2709   0.1689   0.1597   0.1494   0.1621
 ##Detection Prevalence   0.2851   0.1964   0.1835   0.1655   0.1694
 ##Balanced Accuracy      0.9661   0.9193   0.9437   0.9463   0.9364
+
+## Apply model to 20 observations in test set
+predict(mod_gbm, test)
+
+## [1] B A B A A E D B A A B C B A E B A B B B
+##Levels: A B C D E
