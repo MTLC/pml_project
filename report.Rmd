@@ -1,0 +1,130 @@
+---
+title: "Practical Machine Learning Course Project Report"
+author: "Charlie Howard"
+date: "August 22, 2015"
+output: html_document
+---
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The _classe_ variable contains the intent of the participant: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+To learn more about the data, please go to: http://groupware.les.inf.puc-rio.br/har#dataset#ixzz3jZH8iEqq
+
+I will predict which _classe_ a lift belongs to in a testing set of 20 observations with machine learning models fit from a training set of 19622 observations.
+
+```{r readdata, cache=TRUE}
+raw_train <- read.csv("C:/Users/Charlie/Desktop/Coursera Machine Learning/pml-training.csv",
+                stringsAsFactors = FALSE,
+                na.strings = "Not Available")
+dim(raw_train)
+
+raw_test <- read.csv("C:/Users/Charlie/Desktop/Coursera Machine Learning/pml-testing.csv",
+                      stringsAsFactors = FALSE,
+                      na.strings = "Not Available")
+dim(raw_test)
+```
+
+The candidate predictors were determined by visual inspection. Many variables are sparse in the training data and/or entirely NA in the testing data.
+
+```{r varnames, cache=TRUE, dependson='readdata'}
+accel_str <- grep("^accel", colnames(raw_train), value = TRUE)
+gyros_str <- grep("^gyros", colnames(raw_train), value = TRUE)
+magnet_str <- grep("^magnet", colnames(raw_train), value = TRUE)
+pitch_str <- grep("^pitch", colnames(raw_train), value = TRUE)
+roll_str <- grep("^roll", colnames(raw_train), value = TRUE)
+total_str <- grep("^total", colnames(raw_train), value = TRUE)
+yaw_str <- grep("^yaw", colnames(raw_train), value = TRUE)
+predictors_train <- raw_train[, c(accel_str, gyros_str, magnet_str, pitch_str, roll_str, total_str, yaw_str)]
+```
+
+Create train dataframe from candidate predictors and outcome. Reduces number of candidate predictors to 52.
+
+```{r train, cache=TRUE, dependson='varnames'}
+classe <- raw_train$classe
+train <- data.frame(predictors_train, classe)
+dim(train)
+```
+
+Create test dataframe from candidate predictors. Same 52 predictors as in train dataframe.
+
+```{r test, cache=TRUE, dependson='varnames'}
+predictors_test <- raw_test[, c(accel_str, gyros_str, magnet_str, pitch_str, roll_str, total_str, yaw_str)]
+test <- data.frame(predictors_test)
+dim(test)
+```
+
+Create training and testing sets with a 70/30 split. Note these are different from the train and test dataframes.
+
+```{r partition, cache=TRUE, dependson='train'}
+library(caret)
+inTrain <- createDataPartition(y=train$classe, p=0.7, list=FALSE)
+training <- train[inTrain,]
+dim(training)
+testing <- train[-inTrain,]
+dim(testing)
+```
+
+Check for near zero covariates. None found.
+```{r nzv, cache=TRUE, dependson='partition'}
+nzv <- nearZeroVar(training, saveMetrics=TRUE)
+nzv
+```
+
+I found experimentally that I have to downsample the training set to reduce cycle time and get ML functions to complete given the memory constraints of my machine. A 20% subsample of the training set worked well.
+
+```{r downsample, cache=TRUE, dependson='partition'}
+set.seed(9164)
+in_sample <- createDataPartition(training$classe, p = 0.2, list = FALSE)
+training_sample <- training[in_sample, ]
+```
+
+Set up the train control scheme to be used in the caret train() function calls. I will use 5-fold cross-validation for this project.
+
+```{r tC_spec, cache=TRUE}
+trainControl_spec <- trainControl(method = "cv", number = 5)
+```
+
+Fit random forest models with 5-fold cross-validation to the 20% subsample of the training set containing 52 accelerometer measurements. In-sample accuracy of the final model is 95%.
+
+```{r mod_rf, cache=TRUE, dependson=c('downsample', 'tC_spec')}
+mod_rf <- train(classe ~ ., data=training_sample, method="rf", prox=TRUE, trControl=trainControl_spec)
+mod_rf
+```
+
+Apply the final random forest model to the testing set. Out-of-sample accuracy is 96% +/- 1%, which should be somewhat lower than the 95% accuracy achieved by the final model using the training set, but instead the confidence interval contains it. This may be due to the downsampling of the training set I did just to get the model.
+
+```{r pred_rf, cache=TRUE, dependson=c('mod_rf', 'partition')}
+pred_rf <- predict(mod_rf, testing)
+cm_rf <- confusionMatrix(pred_rf, testing$classe)
+cm_rf
+```
+
+Next fit boosting with trees models with 5-fold cross-validation to the same 20% subsample of the training set containing 52 accelerometer measurements. In-sample accuracy of the final model is 93%.
+
+```{r mod_gbm, cache=TRUE, dependson=c('downsample', 'tC_spec')}
+mod_gbm <- train(classe ~ ., data=training_sample, method="gbm", verbose=FALSE, trControl=trainControl_spec)
+mod_gbm
+```
+
+Apply the final boosting with trees model to the testing set. Out-of-sample accuracy is 94% +/- 1%, which should be somewhat lower than the 93% accuracy achieved by the final model using the training set, but instead the confidence interval contains it. This may be due to the downsampling of the training set I did just to get the model.
+
+```{r pred_gbm, cache=TRUE, dependson=c('mod_gbm', 'partition')}
+pred_gbm <- predict(mod_gbm, testing)
+cm_gbm <- confusionMatrix(pred_gbm, testing$classe)
+cm_gbm
+```
+
+To see what variables have the biggest influence on the predicted classes, I examine the variable importance in each model. The most influential variables are very similar in each model, with roll_belt and pitch_forearm topping both lists.
+
+```{r varImp, cache=TRUE, dependson=c('mod_rf', 'mod_gbm')}
+varImp(mod_rf)
+varImp(mod_gbm)
+```
+
+Finally I apply both models to 20 observations in the original test set and compare the predicted classes. The predictions are the same. As to which model I prefer, I will go with the random forest model given the slightly higher out-of-sample accuracy it achieves.
+
+```{r pred_test, cache=TRUE, dependson=c('mod_rf', 'mod_gbm', 'test')}
+predict(mod_rf, test)
+predict(mod_gbm, test)
+```
